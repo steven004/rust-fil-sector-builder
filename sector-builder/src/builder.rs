@@ -33,6 +33,18 @@ pub struct SectorBuilder {
     sector_class: SectorClass,
 }
 
+pub fn init_from_metadata<S: Into<String>>(
+    sector_class: SectorClass,
+    last_committed_sector_id: SectorId,
+    metadata_dir: S,
+    prover_id: [u8; 31],
+    sealed_sector_dir: S,
+    staged_sector_dir: S,
+    max_num_staged_sectors: u8,
+) -> Result<SectorBuilder> {
+    SectorBuilder::init_from_metadata(sector_class, last_committed_sector_id, metadata_dir, prover_id, sealed_sector_dir, staged_sector_dir, max_num_staged_sectors)
+}
+
 impl SectorBuilder {
     // Initialize and return a SectorBuilder from metadata persisted to disk if
     // it exists. Otherwise, initialize and return a fresh SectorBuilder. The
