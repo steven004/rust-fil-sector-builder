@@ -4,6 +4,8 @@ use filecoin_proofs::types::*;
 
 use crate::error::SectorManagerErr;
 
+use crate::builder::SectorId;
+
 pub trait SectorConfig: Sync + Send {
     /// returns the number of user-provided bytes that will fit into a sector managed by this store
     fn max_unsealed_bytes_per_sector(&self) -> UnpaddedBytesAmount;
@@ -22,10 +24,10 @@ pub trait ProofsConfig: Sync + Send {
 
 pub trait SectorManager: Sync + Send {
     /// provisions a new sealed sector and reports the corresponding access
-    fn new_sealed_sector_access(&self) -> Result<String, SectorManagerErr>;
+    fn new_sealed_sector_access(&self, sector_id: SectorId) -> Result<String, SectorManagerErr>;
 
     /// provisions a new staging sector and reports the corresponding access
-    fn new_staging_sector_access(&self) -> Result<String, SectorManagerErr>;
+    fn new_staging_sector_access(&self, sector_id: SectorId) -> Result<String, SectorManagerErr>;
 
     /// reports the number of bytes written to an unsealed sector
     fn num_unsealed_bytes(&self, access: &str) -> Result<u64, SectorManagerErr>;
