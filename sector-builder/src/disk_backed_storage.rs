@@ -9,25 +9,49 @@ use filecoin_proofs::types::*;
 
 use crate::error::SectorManagerErr;
 use crate::store::{ProofsConfig, SectorConfig, SectorManager, SectorStore};
-use crate::util;
+// use crate::util;
+use crate::builder::SectorId;
 
 // These sizes are for SEALED sectors. They are used to calculate the values of setup parameters.
 // They can be overridden by setting the corresponding environment variable (with FILECOIN_PROOFS_ prefix),
 // but this is not recommended, since some sealed sector sizes are invalid. If you must set this manually,
 // ensure the chosen sector size is a multiple of 32.
 
+
+// This is a segmented sectorid expression protocol, to support meaningful sector name on disk
+// See: https://github.com/filecoin-project/rust-fil-proofs/issues/620 for the details
+// Currently, only the default one - on (original) and an IP example design are supported, 
+// To create a mechanism to support future extension
+pub enum SectorAccessProto {
+    // complicant with the original design, only the lower 32bit is used for sectorId index for a casual miner
+    // The sector_access_name is like: on-000000000000-dddddddddd
+    On(u32),   // Here the parameter is the segment index, set to 0 by default
+
+    // an example for extension using IP address of NAS storage
+    // The sector_access_name is like: ip-192168001010-dddddddddd
+    Ip(String),  // Here the parameter is the IP string, as "192168001010"
+
+    // Leave for future protocol extension, e.g. 
+    // Uuid(String, u32),     // to indicate a media with UUID   
+}
+
 pub struct DiskManager {
     staging_path: String,
     sealed_path: String,
+
+    // A sector ID presentation with a defined protocol
+    sector_access_proto: SectorAccessProto, 
+    sector_segment_id: u32,
 }
 
+
 impl SectorManager for DiskManager {
-    fn new_sealed_sector_access(&self) -> Result<String, SectorManagerErr> {
-        self.new_sector_access(Path::new(&self.sealed_path))
+    fn new_sealed_sector_access(&self, sector_id: SectorId) -> Result<String, SectorManagerErr> {
+        self.new_sector_access(Path::new(&self.sealed_path), sector_id)
     }
 
-    fn new_staging_sector_access(&self) -> Result<String, SectorManagerErr> {
-        self.new_sector_access(Path::new(&self.staging_path))
+    fn new_staging_sector_access(&self, sector_id: SectorId) -> Result<String, SectorManagerErr> {
+        self.new_sector_access(Path::new(&self.staging_path), sector_id)
     }
 
     fn num_unsealed_bytes(&self, access: &str) -> Result<u64, SectorManagerErr> {
@@ -103,8 +127,10 @@ impl SectorManager for DiskManager {
 }
 
 impl DiskManager {
-    fn new_sector_access(&self, root: &Path) -> Result<String, SectorManagerErr> {
-        let pbuf = root.join(util::rand_alpha_string(32));
+    fn new_sector_access(&self, root: &Path, sector_id: SectorId) -> Result<String, SectorManagerErr> {
+        // let pbuf = root.join(util::rand_alpha_string(32));
+        let filename = self.convert_sector_id_to_access_name(sector_id)?;
+        let pbuf = root.join(filename);
 
         create_dir_all(root)
             .map_err(|err| SectorManagerErr::ReceiverError(format!("{:?}", err)))
@@ -123,6 +149,70 @@ impl DiskManager {
                     |str_ref| Ok(str_ref.to_owned()),
                 )
             })
+    }
+
+    fn convert_sector_id_to_access_name(&self, sector_id: SectorId) -> Result<String, SectorManagerErr> {
+        let seg_id = (sector_id >> 32) as u32;
+        let index = sector_id & 0x00000000ffffffff;
+
+        match &self.sector_access_proto {
+            SectorAccessProto::On(_) => {
+                if seg_id != self.sector_segment_id { 
+                    Err(SectorManagerErr::CallerError(format!("seg_id({}) does not match the setting({})", seg_id, self.sector_segment_id)))
+                } else {
+                    Ok(format!("on-{:12}-{:10}", seg_id, index))
+                }
+            }
+            SectorAccessProto::Ip(ip_string) => {
+                if seg_id != self.sector_segment_id { 
+                    Err(SectorManagerErr::CallerError(format!("seg_id({}) does not match the setting({})", seg_id, self.sector_segment_id)))
+                } else {
+                    Ok(format!("ip-{}-{:10}", ip_string, index))
+                }
+            }
+            // _ => Err(SectorManagerErr::UnclassifiedError(format!("The SectorAccessProto could not be recognized")))
+        }
+    }
+
+    fn convert_sector_access_name_to_id(&self, filename: &str) -> Result<SectorId, SectorManagerErr> {
+        let ind = self.sector_access_proto.validate_and_return_index(filename)?;
+
+        Ok( (self.sector_segment_id as u64) << 32 + ind)
+    } 
+}
+
+impl SectorAccessProto {
+    // Return the sector index (the lower 32bit value) or Error when the format is incorrect
+    fn validate_and_return_index(&self, filename: &str) -> Result<u32, SectorManagerErr> {
+        if filename.len() != 26 { 
+            Err(SectorManagerErr::CallerError(format!("The sector file name '{}' is not supported in this version", filename)))
+        } else if filename.chars().nth(2).unwrap() != '-' || filename.chars().nth(15).unwrap() != '-' {
+            Err(SectorManagerErr::CallerError(format!("The sector file name '{}' is not supported in this version", filename)))
+        } else {
+            let proto_str = &filename[..2];  
+            let seg_str = &filename[3..15];
+            let ind_str = &filename[16..];
+            
+            // TODO: error handling
+            let index = ind_str.parse::<u32>().unwrap();
+
+            match self {
+                SectorAccessProto::On(seg_id) => {
+                    if proto_str != "on" {
+                        Err(SectorManagerErr::CallerError(format!("The worker is set to On format sector access only, the file '{}' is not.", filename)))
+                    } else if seg_str != format!("{:12}", seg_id) {
+                        Err(SectorManagerErr::CallerError(format!("The seg_id should be {:12}, the file '{}' is not.", seg_id, filename)))
+                    } else { Ok(index) }
+                }
+                SectorAccessProto::Ip(addr) => {
+                    if proto_str != "ip" {
+                        Err(SectorManagerErr::CallerError(format!("The worker is set to Ip format sector access only, the file '{}' is not.", filename)))
+                    } else if seg_str != addr {
+                        Err(SectorManagerErr::CallerError(format!("The seg_id should be {}, the file '{}' is not.", addr, filename)))
+                    } else { Ok(index) }
+                }
+            }
+        }
     }
 }
 
@@ -156,9 +246,14 @@ pub fn new_sector_store(
     sealed_path: String,
     staging_path: String,
 ) -> ConcreteSectorStore {
+    // By default, support On-000000000000-dddddddddd format
+    let default_access_proto = SectorAccessProto::On(0);
+
     let manager = Box::new(DiskManager {
         staging_path,
         sealed_path,
+        sector_access_proto: default_access_proto,
+        sector_segment_id: 0u32,
     });
 
     let sector_config = Box::new(Config::from(sector_class));
