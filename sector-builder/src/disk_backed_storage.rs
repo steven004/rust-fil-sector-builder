@@ -160,14 +160,14 @@ impl DiskManager {
                 if seg_id != self.sector_segment_id { 
                     Err(SectorManagerErr::CallerError(format!("seg_id({}) does not match the setting({})", seg_id, self.sector_segment_id)))
                 } else {
-                    Ok(format!("on-{:12}-{:10}", seg_id, index))
+                    Ok(format!("on-{:012}-{:010}", seg_id, index))
                 }
             }
             SectorAccessProto::Ip(ip_string) => {
                 if seg_id != self.sector_segment_id { 
                     Err(SectorManagerErr::CallerError(format!("seg_id({}) does not match the setting({})", seg_id, self.sector_segment_id)))
                 } else {
-                    Ok(format!("ip-{}-{:10}", ip_string, index))
+                    Ok(format!("ip-{}-{:010}", ip_string, index))
                 }
             }
             // _ => Err(SectorManagerErr::UnclassifiedError(format!("The SectorAccessProto could not be recognized")))
