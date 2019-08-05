@@ -396,7 +396,7 @@ pub mod tests {
         let mgr = storage.manager();
 
         let access = mgr
-            .new_staging_sector_access()
+            .new_staging_sector_access(18446744073709551615_u64)
             .expect("failed to create staging file");
 
         // shared amongst test cases
@@ -488,7 +488,7 @@ pub mod tests {
             PoRepProofPartitions(2),
             PoStProofPartitions(1),
         ));
-        let access = store.manager().new_staging_sector_access().unwrap();
+        let access = store.manager().new_staging_sector_access(18446744073709551615_u64).unwrap();
 
         assert!(store
             .manager()

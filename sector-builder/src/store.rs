@@ -23,7 +23,7 @@ pub trait ProofsConfig: Sync + Send {
 }
 
 pub trait SectorManager: Sync + Send {
-    /// provisions a new sealed sector and reports the corresponding access
+    /// provisions a new sealed sector with the sector_id and reports the corresponding access
     fn new_sealed_sector_access(&self, sector_id: SectorId) -> Result<String, SectorManagerErr>;
 
     /// provisions a new staging sector and reports the corresponding access

@@ -9,3 +9,5 @@ heaptrack*
 *.heap
 rust-fil-proofs.config.toml
 **/*.pc
+sector-builder/.DS_Store
+.DS_Store
